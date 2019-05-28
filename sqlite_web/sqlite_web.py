@@ -518,9 +518,46 @@ def get_renderer(foreignkey_lookup, field_names, suppress, is_outermost_level, t
 
     return renderer
 
-@app.route('/<table>/recursive_content/')
+
+def get_insert_renderer(foreignkey_lookup, field_names, table_class, i=0):
+    def renderer():
+        choices={}
+        for field in field_names:
+            if field in foreignkey_lookup:
+                choices[field]="CHOOSE"
+        prefix="{}_{}".format(table_class.__name__, i)
+        return render_template("insert_row.html", field_names=field_names, choices=choices, prefix=prefix)
+    return renderer
+
+
+def insert_elements(request):
+    to_write=defaultdict(dict)
+    for k in request.form:
+        table, _, rest = k.partition("_")
+        i, _, field = rest.partition("_")
+        to_write[(i, table)][field]=request.form[k]
+
+    for k in sorted(to_write, reverse=True):
+        table_name=k[1]
+        dataset.update_cache(table_name)
+        ds_table = dataset[table_name]
+        table_class = ds_table.model_class
+
+        query = table_class.insert(**to_write[k])
+        query.execute()
+        dataset.update_cache(table_name)
+
+
+    return "OK"
+
+
+@app.route('/<table>/recursive_content/', methods=["GET", "POST"])
 @require_table
 def table_content_plus(table):
+    if request.method == 'POST':
+        return insert_elements(request)
+
+
     page_number = request.args.get('page') or ''
     page_number = int(page_number) if page_number.isdigit() else 1
 
@@ -598,7 +635,8 @@ def table_content_plus(table):
         table=table,
         total_pages=total_pages,
         total_rows=total_rows,
-        renderrow=get_renderer(foreignkey_lookup, field_names, [], True, title=table, i=0)
+        renderrow=get_renderer(foreignkey_lookup, field_names, [], True, title=table, i=0),
+        insert_row=get_insert_renderer(foreignkey_lookup, field_names, ds_table.model_class)
         )
 
 

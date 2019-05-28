@@ -35,6 +35,9 @@
       {{ renderrow(row) | safe }}
   {% endfor %}
 
+    {{ insert_row() | safe }}
+
+
   <nav>
     <ul class="pagination">
       <li class="{% if not previous_page %}disabled {% endif %}page-item">
