@@ -1,5 +1,3 @@
-![](http://media.charlesleifer.com/blog/photos/sqlite-web.png)
-
 `sqlite-object-browser` is based on `sqlite-web` by coleifer.
 
 Project dependencies:
