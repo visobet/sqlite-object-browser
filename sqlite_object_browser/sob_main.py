@@ -88,7 +88,7 @@ app.config.from_object(__name__)
 dataset = None
 migrator = None
 
-
+plugins=[]
 
 #
 # Database metadata objects.
@@ -150,6 +150,9 @@ class SqliteDataSet(DataSet):
 
     def get_foreign_keys(self, table):
         return dataset._database.get_foreign_keys(table)
+
+    def get_primary_keys(self, table):
+        return dataset._database.get_primary_keys(table)
 
     def get_triggers(self, table):
         cursor = self.query(
@@ -472,7 +475,7 @@ def get_foreign_key_lookup(table_name):
     return {f.column: f for f in foreign_keys}
 
 
-def get_renderer(foreignkey_lookup, field_names, suppress, is_outermost_level, title, i):
+def get_renderer(foreignkey_lookup, field_names, suppress, is_outermost_level, table_name, i):
     def renderer(row):
         outrow={}
         if row is None:
@@ -503,28 +506,38 @@ def get_renderer(foreignkey_lookup, field_names, suppress, is_outermost_level, t
             value = getattr(row, field)
             if hasattr(value, "validate_model"):  # A Model
                 inner_row = getattr(row, field)
-                table_name = type(inner_row).__name__
-                target_table = dataset[table_name]
+                inner_table_name = type(inner_row).__name__
+                target_table = dataset[inner_table_name]
 
-                foreignkey_lookup_inner = get_foreign_key_lookup(table_name)
+                foreignkey_lookup_inner = get_foreign_key_lookup(inner_table_name)
                 if i<app.config['MAXDEPTH']:
                     outrow[field]="{}: ".format(inner_row) + get_renderer(foreignkey_lookup_inner,
                                                                       target_table.columns,
                                                                       [foreignkey_lookup[field].dest_column],
                                                                       is_outermost_level=False,
-                                                                      title=table_name,
+                                                                      table_name=inner_table_name,
                                                                       i=i+1)(inner_row)
                 else:
                     print(foreignkey_lookup)
                     f="{}:{}".format(foreignkey_lookup[field].dest_column, getattr(inner_row, foreignkey_lookup[field].dest_column))
-                    link=url_for("table_content_plus", table=table_name, filters=f)
+                    link=url_for("table_content_plus", table=inner_table_name, filters=f)
                     outrow[field] = "{} ".format(inner_row)+render_template("row_truncated.html",link=link )
             else:
                 outrow[field]=value_filter(value)
 
+        title = table_name
+        for plugin in plugins:
+            if hasattr(plugin, "format_title"):
+                title = plugin.format_title(title, table_name, row)
+
+        f = []
+        for field in dataset.get_primary_keys(table_name):
+            f.append("{}:{}".format(field, getattr(row, field)))
+        main_link=url_for("table_content_plus", table=table_name, filters=",".join(f))
+
         return render_template("rowplus.html", field_names=filtered_field_names, row=outrow, links=links,
-                               is_outermost_level=is_outermost_level,col_id=str(uuid.uuid4()).replace("-", "_"),
-                               title=title)
+                               is_outermost_level=is_outermost_level, col_id=str(uuid.uuid4()).replace("-", "_"),
+                               title=title, main_link=main_link)
 
 
     return renderer
@@ -628,9 +641,9 @@ def table_content_plus(table):
 
     columns = [f.column_name for f in ds_table.model_class._meta.sorted_fields]
 
-    table_sql = dataset.query(
-        'SELECT sql FROM sqlite_master WHERE tbl_name = ? AND type = ?',
-        [table, 'table']).fetchone()[0]
+    # table_sql = dataset.query(
+    #     'SELECT sql FROM sqlite_master WHERE tbl_name = ? AND type = ?',
+    #     [table, 'table']).fetchone()[0]
 
     return render_template(
         'table_content_plus.html',
@@ -647,7 +660,7 @@ def table_content_plus(table):
         table=table,
         total_pages=total_pages,
         total_rows=total_rows,
-        renderrow=get_renderer(foreignkey_lookup, field_names, [], True, title=table, i=0),
+        renderrow=get_renderer(foreignkey_lookup, field_names, [], True, table_name=table, i=0),
         insert_row=get_insert_renderer(foreignkey_lookup, field_names, ds_table.model_class)
         )
 
@@ -969,6 +982,12 @@ def get_option_parser():
         '--url-prefix',
         dest='url_prefix',
         help='URL prefix for application.')
+    parser.add_option(
+        '-c',
+        '--customization',
+        dest='customization',
+        help='Folder with a file plugin.py.')
+
     return parser
 
 def die(msg, exit_code=1):
@@ -997,6 +1016,17 @@ def install_auth_handler(password):
             flash('You must log-in to view the database browser.', 'danger')
             session['next_url'] = request.base_url
             return redirect(url_for('login'))
+
+def load_customization_plugin(folder):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("customization_plugin", os.path.join(folder, "plugin.py"))
+    customizer = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(customizer)
+    plugin = customizer.Plugin()
+    register_plugin(plugin)
+
+def register_plugin(plugin):
+    plugins.append(plugin)
 
 def initialize_app(filename, read_only=False, password=None, url_prefix=None):
     global dataset
@@ -1052,6 +1082,10 @@ def main():
 
     if options.browser:
         open_browser_tab(options.host, options.port)
+
+    if options.customization:
+        load_customization_plugin(options.customization)
+
     app.run(host=options.host, port=options.port, debug=options.debug)
 
 

@@ -2,10 +2,12 @@
 
   <span type="button" data-toggle="collapse" data-target="#collapse_{{ col_id }}" aria-expanded="{{ is_outermost_level | lower }}" aria-controls="collapse_{{ col_id }}">
       <span>{{title}}</span>
-
   </span>
 
     <div  class="collapse {%  if is_outermost_level %}show{% endif %} }}" id="collapse_{{ col_id }}">
+
+        <a href={{ main_link }}>select</a>
+
     {% for field in field_names %}
         <div>
             <span class="fieldname font-weight-bold">
