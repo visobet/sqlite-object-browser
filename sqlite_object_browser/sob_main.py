@@ -88,9 +88,33 @@ app.config.from_object(__name__)
 dataset = None
 migrator = None
 
-plugins=[]
 
-#
+class PluginContainer():
+    def __init__(self):
+        self.plugins=[]
+    def register(self, plugin):
+        self.plugins.append(plugin)
+
+    def format_title(self, title, table_name, row, is_toplevel):
+        title=title
+        for plugin in self.plugins:
+            if hasattr(plugin, "format_title"):
+                title=plugin.format_title(title, table_name, row, is_toplevel)
+        return title
+
+    def add_content(self, table_name, row, is_toplevel):
+        extra_content=""
+        for plugin in self.plugins:
+            if hasattr(plugin, "add_content"):
+                extra_content+=plugin.add_content(table_name, row, is_toplevel)
+        return extra_content
+
+    def process_link(self, source_foreign_key, link_tuple, source_name, rowvalue):
+        for plugin in self.plugins:
+            if hasattr(plugin, "process_link"):
+                link_tuple=plugin.process_link(source_foreign_key, link_tuple, source_name, rowvalue)
+        return link_tuple
+plugins = PluginContainer()
 # Database metadata objects.
 #
 
@@ -500,7 +524,9 @@ def get_renderer(foreignkey_lookup, field_names, suppress, is_outermost_level, t
                 else:
                     rowvalue = getattr(row, source_foreign_key.dest_column)
                     query = url_for("table_content_plus", table=source_table, filters="{}:{}".format(source_name, rowvalue))
-                    links[source_foreign_key.dest_column].append((source_table, query))
+                    link_tuple = (source_table, query)
+                    link_tuple = plugins.process_link(source_foreign_key, link_tuple, source_name, rowvalue)
+                    links[source_foreign_key.dest_column].append(link_tuple)
         filtered_field_names=[ fn for fn in field_names if fn not in suppress ]
         for field in filtered_field_names:
             value = getattr(row, field)
@@ -525,19 +551,21 @@ def get_renderer(foreignkey_lookup, field_names, suppress, is_outermost_level, t
             else:
                 outrow[field]=value_filter(value)
 
-        title = table_name
-        for plugin in plugins:
-            if hasattr(plugin, "format_title"):
-                title = plugin.format_title(title, table_name, row)
+        title = plugins.format_title(table_name, table_name, row, is_outermost_level)
 
         f = []
-        for field in dataset.get_primary_keys(table_name):
+        primary_keys = dataset.get_primary_keys(table_name)
+        if not primary_keys:
+            primary_keys = field_names
+        for field in primary_keys:
             f.append("{}:{}".format(field, getattr(row, field)))
         main_link=url_for("table_content_plus", table=table_name, filters=",".join(f))
 
+        extra_content=plugins.add_content(table_name, row, is_outermost_level)
+
         return render_template("rowplus.html", field_names=filtered_field_names, row=outrow, links=links,
                                is_outermost_level=is_outermost_level, col_id=str(uuid.uuid4()).replace("-", "_"),
-                               title=title, main_link=main_link)
+                               title=title, main_link=main_link, extra_content=extra_content)
 
 
     return renderer
@@ -622,7 +650,6 @@ def table_content_plus(table):
     foreign_keys = dataset.get_foreign_keys(table)
     foreignkey_lookup={f.column: f for f in foreign_keys}
     for col, foreign_key in foreignkey_lookup.items():
-        print("Q now", query)
         query.prefetch(dataset[foreign_key.dest_table].model_class)
 
     ordering = request.args.get('ordering')
@@ -1023,10 +1050,8 @@ def load_customization_plugin(folder):
     customizer = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(customizer)
     plugin = customizer.Plugin()
-    register_plugin(plugin)
+    plugins.register(plugin)
 
-def register_plugin(plugin):
-    plugins.append(plugin)
 
 def initialize_app(filename, read_only=False, password=None, url_prefix=None):
     global dataset
