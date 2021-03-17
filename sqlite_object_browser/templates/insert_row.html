@@ -1,0 +1,49 @@
+<div class="card m-{% if is_outermost_level %}4{% else %}2{% endif %} border border-primary entity_{{ title }}">
+    {% if is_outermost_level %}<h1>
+        Create an {{ table_name }} entry.</h1>
+    {% endif %}
+    <div class="collapse {%  if is_outermost_level %}show{% endif %}" id="collapse_{{ col_id }}">
+        {% if not is_outermost_level %}<span>
+            Create an {{ table_name }} entry.</span>
+    {% endif %}
+    {% if is_outermost_level %}
+        <form action="{{ main_link }}" method="post">
+        {% endif %}
+            {% for field in field_names %}
+                {% if not types[field]["__SKIP__"] %}
+                    <div>
+                        {% set curr_name=prefix+"%"+field %}
+                        <span class="fieldname font-weight-bold">
+                         <label for="{{ curr_name }}"> {{ field }}</label>
+                        </span>
+                        {% if field in choices %}
+                            <select name="{{ curr_name }}" id="{{ curr_name }}"
+                            onchange="var selection = this.value;var showhide='hide';
+                                      if (selection.startsWith('NEW')){var showhide='show';}
+                                      $('#collapse_{{ choices[field][-1][2] }}').collapse(showhide);">
+                                {% for choice in choices[field] %}
+                                    {% if choice[0] != "NEW" %}
+                                        <option value="{{ choice[0] }}">{{ choice[0] }}: {{ choice[1] }}</option>
+                                    {% else %}
+                                        <option value="NEW{{ choice[2] }}">Add new element</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                            {% if choices[field][-1][0] == "NEW" %}
+                                <!-- RECURSION: Here we display the inner template -->
+                                {{ choices[field][-1][1] | safe }}
+                            {% endif %}
+                        {% else %}
+                            <span>
+                                <input {% for key, value in types[field].items() %} {{ key}}="{{value}}" {% endfor %} id="{{ curr_name }}" name="{{ curr_name }}">
+                            </span>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            {% endfor %}
+    {% if is_outermost_level %}
+            <input type="submit" value="Insert">
+        </form>
+    {% endif %}
+    </div>
+</div>

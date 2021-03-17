@@ -1,20 +1,5 @@
 {% extends "base_table.html" %}
 
-{% block extra_scripts %}
-  <script type="text/javascript">
-    $(function() {
-      var valueToggles = $('a.toggle-value');
-      valueToggles.on('click', function(e) {
-        e.preventDefault();
-        var elem = $(this),
-            truncated = elem.siblings('span.truncated'),
-            full = elem.siblings('span.full');
-        truncated.toggle();
-        full.toggle();
-      });
-    });
-  </script>
-{% endblock %}
 
 {% block content_title %}
   {{ super() }}
@@ -34,9 +19,7 @@
   {% for row in query %}
       {{ renderrow(row) | safe }}
   {% endfor %}
-
-
-
+{{ insert_row()|safe }}
   <nav>
     <ul class="pagination">
       <li class="{% if not previous_page %}disabled {% endif %}page-item">

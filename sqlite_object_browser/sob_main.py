@@ -44,6 +44,7 @@ try:
     from pygments import formatters, highlight, lexers
 except ImportError:
     import warnings
+
     warnings.warn('pygments library not found.', ImportWarning)
     syntax_highlight = lambda data: '<pre>%s</pre>' % data
 else:
@@ -56,6 +57,7 @@ else:
 
 try:
     from peewee import __version__
+
     peewee_version = tuple([int(p) for p in __version__.split('.')])
 except ImportError:
     raise RuntimeError('Unable to import peewee module. Install by running '
@@ -71,7 +73,6 @@ from peewee import IndexMetadata
 from peewee import sqlite3
 from playhouse.dataset import DataSet
 from playhouse.migrate import migrate
-
 
 CUR_DIR = os.path.realpath(os.path.dirname(__file__))
 DEBUG = False
@@ -91,29 +92,44 @@ migrator = None
 
 class PluginContainer():
     def __init__(self):
-        self.plugins=[]
+        self.plugins = []
+
     def register(self, plugin):
         self.plugins.append(plugin)
 
     def format_title(self, title, table_name, row, is_toplevel):
-        title=title
         for plugin in self.plugins:
             if hasattr(plugin, "format_title"):
-                title=plugin.format_title(title, table_name, row, is_toplevel)
+                title = plugin.format_title(title, table_name, row, is_toplevel)
+        return title
+
+    def format_entry(self, table_name, row_dict):
+        repres = ", ".join("{}: {}".format(k, v) for k, v in row_dict.items())
+
+        title = "{} entry ({})".format(table_name, repres)
+        for plugin in self.plugins:
+            if hasattr(plugin, "format_entry"):
+                title = plugin.format_entry(title, table_name, row_dict)
+
+        if len(title) > 75:
+            title = title[:72] + "..."
+
         return title
 
     def add_content(self, table_name, row, is_toplevel):
-        extra_content=""
+        extra_content = ""
         for plugin in self.plugins:
             if hasattr(plugin, "add_content"):
-                extra_content+=plugin.add_content(table_name, row, is_toplevel)
+                extra_content += plugin.add_content(table_name, row, is_toplevel)
         return extra_content
 
     def process_link(self, source_foreign_key, link_tuple, source_name, rowvalue):
         for plugin in self.plugins:
             if hasattr(plugin, "process_link"):
-                link_tuple=plugin.process_link(source_foreign_key, link_tuple, source_name, rowvalue)
+                link_tuple = plugin.process_link(source_foreign_key, link_tuple, source_name, rowvalue)
         return link_tuple
+
+
 plugins = PluginContainer()
 # Database metadata objects.
 #
@@ -121,6 +137,7 @@ plugins = PluginContainer()
 TriggerMetadata = namedtuple('TriggerMetadata', ('name', 'sql'))
 
 ViewMetadata = namedtuple('ViewMetadata', ('name', 'sql'))
+
 
 #
 # Database helpers.
@@ -214,6 +231,7 @@ class SqliteDataSet(DataSet):
             '%s_%s' % (virtual_table, suffix) for suffix in suffixes
             for virtual_table in virtual_tables)
 
+
 #
 # Flask views.
 #
@@ -221,6 +239,7 @@ class SqliteDataSet(DataSet):
 @app.route('/')
 def index():
     return render_template('index.html', sqlite=sqlite3)
+
 
 @app.route('/login/', methods=['GET', 'POST'])
 def login():
@@ -231,10 +250,12 @@ def login():
         flash('The password you entered is incorrect.', 'danger')
     return render_template('login.html')
 
+
 @app.route('/logout/', methods=['GET'])
 def logout():
     session.pop('authorized', None)
     return redirect(url_for('login'))
+
 
 def require_table(fn):
     @wraps(fn)
@@ -242,7 +263,9 @@ def require_table(fn):
         if table not in dataset.tables:
             abort(404)
         return fn(table, *args, **kwargs)
+
     return inner
+
 
 @app.route('/create-table/', methods=['POST'])
 def table_create():
@@ -253,6 +276,7 @@ def table_create():
 
     dataset[table]
     return redirect(url_for('table_import', table=table))
+
 
 @app.route('/<table>/')
 @require_table
@@ -275,10 +299,12 @@ def table_structure(table):
         table_sql=table_sql,
         triggers=dataset.get_triggers(table))
 
+
 def get_request_data():
     if request.method == 'POST':
         return request.form
     return request.args
+
 
 @app.route('/<table>/add-column/', methods=['GET', 'POST'])
 @require_table
@@ -319,6 +345,7 @@ def add_column(table):
         name=name,
         table=table)
 
+
 @app.route('/<table>/drop-column/', methods=['GET', 'POST'])
 @require_table
 def drop_column(table):
@@ -342,6 +369,7 @@ def drop_column(table):
         column_names=column_names,
         name=name,
         table=table)
+
 
 @app.route('/<table>/rename-column/', methods=['GET', 'POST'])
 @require_table
@@ -371,6 +399,7 @@ def rename_column(table):
         rename_to=rename_to,
         table=table)
 
+
 @app.route('/<table>/add-index/', methods=['GET', 'POST'])
 @require_table
 def add_index(table):
@@ -399,6 +428,7 @@ def add_index(table):
         table=table,
         unique=unique)
 
+
 @app.route('/<table>/drop-index/', methods=['GET', 'POST'])
 @require_table
 def drop_index(table):
@@ -422,6 +452,7 @@ def drop_index(table):
         name=name,
         table=table)
 
+
 @app.route('/<table>/drop-trigger/', methods=['GET', 'POST'])
 @require_table
 def drop_trigger(table):
@@ -444,6 +475,7 @@ def drop_trigger(table):
         trigger_names=trigger_names,
         name=name,
         table=table)
+
 
 @app.route('/<table>/content/')
 @require_table
@@ -492,7 +524,8 @@ def table_content(table):
         table=table,
         total_pages=total_pages,
         total_rows=total_rows,
-        )
+    )
+
 
 def get_foreign_key_lookup(table_name):
     foreign_keys = dataset.get_foreign_keys(table_name)
@@ -500,19 +533,19 @@ def get_foreign_key_lookup(table_name):
 
 
 def get_renderer(foreignkey_lookup, field_names, suppress, is_outermost_level, table_name, i):
-    def renderer(row):
-        outrow={}
+    def renderer(row, template_name="rowplus.html"):
+        outrow = {}
         if row is None:
             return ""
-        links=defaultdict(list)
+        links = defaultdict(list)
 
         # Lets get all relations:
         for attr in dir(row):
             if attr.endswith("_rel"):
-                relation = getattr(row,attr)
+                relation = getattr(row, attr)
                 print(type(relation))
                 source_table = relation.model.__name__
-                _,_, source_name = attr.partition(source_table)
+                _, _, source_name = attr.partition(source_table)
                 source_name = source_name.rpartition("_")[0][1:]
                 print("ST", source_table, "SN", source_name)
                 print("===")
@@ -523,11 +556,13 @@ def get_renderer(foreignkey_lookup, field_names, suppress, is_outermost_level, t
                     pass
                 else:
                     rowvalue = getattr(row, source_foreign_key.dest_column)
-                    query = url_for("table_content_plus", table=source_table, filters="{}:{}".format(source_name, rowvalue))
+                    query = url_for("table_content_plus", table=source_table,
+                                    filters="{}:{}".format(source_name, rowvalue))
                     link_tuple = (source_table, query)
                     link_tuple = plugins.process_link(source_foreign_key, link_tuple, source_name, rowvalue)
                     links[source_foreign_key.dest_column].append(link_tuple)
-        filtered_field_names=[ fn for fn in field_names if fn not in suppress ]
+
+        filtered_field_names = [fn for fn in field_names if fn not in suppress]
         for field in filtered_field_names:
             value = getattr(row, field)
             if hasattr(value, "validate_model"):  # A Model
@@ -536,20 +571,21 @@ def get_renderer(foreignkey_lookup, field_names, suppress, is_outermost_level, t
                 target_table = dataset[inner_table_name]
 
                 foreignkey_lookup_inner = get_foreign_key_lookup(inner_table_name)
-                if i<app.config['MAXDEPTH']:
-                    outrow[field]="{}: ".format(inner_row) + get_renderer(foreignkey_lookup_inner,
-                                                                      target_table.columns,
-                                                                      [foreignkey_lookup[field].dest_column],
-                                                                      is_outermost_level=False,
-                                                                      table_name=inner_table_name,
-                                                                      i=i+1)(inner_row)
+                if i < app.config['MAXDEPTH']:
+                    outrow[field] = "{}: ".format(inner_row) + get_renderer(foreignkey_lookup_inner,
+                                                                            target_table.columns,
+                                                                            [foreignkey_lookup[field].dest_column],
+                                                                            is_outermost_level=False,
+                                                                            table_name=inner_table_name,
+                                                                            i=i + 1)(inner_row)
                 else:
                     print(foreignkey_lookup)
-                    f="{}:{}".format(foreignkey_lookup[field].dest_column, getattr(inner_row, foreignkey_lookup[field].dest_column))
-                    link=url_for("table_content_plus", table=inner_table_name, filters=f)
-                    outrow[field] = "{} ".format(inner_row)+render_template("row_truncated.html",link=link )
+                    f = "{}:{}".format(foreignkey_lookup[field].dest_column,
+                                       getattr(inner_row, foreignkey_lookup[field].dest_column))
+                    link = url_for("table_content_plus", table=inner_table_name, filters=f)
+                    outrow[field] = "{} ".format(inner_row) + render_template("row_truncated.html", link=link)
             else:
-                outrow[field]=value_filter(value)
+                outrow[field] = value_filter(value)
 
         title = plugins.format_title(table_name, table_name, row, is_outermost_level)
 
@@ -559,57 +595,102 @@ def get_renderer(foreignkey_lookup, field_names, suppress, is_outermost_level, t
             primary_keys = field_names
         for field in primary_keys:
             f.append("{}:{}".format(field, getattr(row, field)))
-        main_link=url_for("table_content_plus", table=table_name, filters=",".join(f))
+        main_link = url_for("table_content_plus", table=table_name, filters=",".join(f))
 
-        extra_content=plugins.add_content(table_name, row, is_outermost_level)
+        extra_content = plugins.add_content(table_name, row, is_outermost_level)
 
-        return render_template("rowplus.html", field_names=filtered_field_names, row=outrow, links=links,
+        return render_template(template_name, field_names=filtered_field_names, row=outrow, links=links,
                                is_outermost_level=is_outermost_level, col_id=str(uuid.uuid4()).replace("-", "_"),
                                title=title, main_link=main_link, extra_content=extra_content)
-
 
     return renderer
 
 
-def get_insert_renderer(foreignkey_lookup, field_names, table_class, i=0):
-    return None
+def get_insert_renderer(foreignkey_lookup, field_names, table_class, generation=0, identifier="0"):
     def renderer():
-        choices={}
+        input_attribs = defaultdict(dict)
+        choices = {}
         for field in field_names:
+            print("table class", type(table_class))
+            print(dir(table_class))
+            field_type = getattr(table_class, field).field_type
+            print("FIELD TYPE", field, repr(field_type))
+            input_attribs[field]["_SKIP__"] = False
+
+            if field_type == "AUTO":
+                input_attribs[field]["__SKIP__"]=True
+            elif field_type == "INT":
+                input_attribs[field]["type"] = "number"
+            elif field_type == "DECIMAL":
+                input_attribs[field]["type"] = "number"
+                input_attribs[field]["step"] = "0.001"
+            else:
+                input_attribs[field]["type"] = "text"
             if field in foreignkey_lookup:
-                choices[field]="CHOOSE"
-        prefix="{}_{}".format(table_class.__name__, i)
-        return render_template("insert_row.html", field_names=field_names, choices=choices, prefix=prefix)
+                dest_table = dataset[foreignkey_lookup[field].dest_table]
+                rows = dest_table.all()
+                choices[field] = [(row[foreignkey_lookup[field].dest_column],
+                                   plugins.format_entry(foreignkey_lookup[field].dest_table,
+                                                        row)) for row in rows]
+                foreignkey_lookup_inner = get_foreign_key_lookup(foreignkey_lookup[field].dest_table)
+                if generation < app.config['MAXDEPTH']:
+                    inner_identifier=str(uuid.uuid4()).replace("-", "_").replace("%", "_")
+                    choices[field].append(("NEW", get_insert_renderer(foreignkey_lookup_inner,
+                                                                       dest_table.columns,
+                                                                       dest_table.model_class,
+                                                                       generation=generation + 1,
+                                                                       identifier=inner_identifier
+                                                                       )(), inner_identifier))
+        prefix = "{}%{}%{}".format(table_class.__name__, generation, identifier)
+        main_link = url_for("table_content_plus", table=table_class.__name__, page=10000000)
+        return render_template("insert_row.html", field_names=field_names, choices=choices,
+                               prefix=prefix, types=input_attribs, main_link=main_link,
+                               table_name=table_class.__name__, is_outermost_level=generation==0,
+                               col_id=str(uuid.uuid4()).replace("-", "_") if identifier=="0" else identifier)
+
     return renderer
 
 
 def insert_elements(request):
-    to_write=defaultdict(dict)
+    to_write = defaultdict(dict)
     for k in request.form:
-        table, _, rest = k.partition("_")
-        i, _, field = rest.partition("_")
-        to_write[(i, table)][field]=request.form[k]
+        table, _, rest = k.partition("%")
+        generation, _, rest = rest.partition("%")
+        identifier, _, field = rest.partition("%")
+        to_write[identifier, table][field] = request.form[k]
+    print(to_write)
+    # "0" is the topmost entry
+    insert_for_identifier("0", to_write)
 
-    for k in sorted(to_write, reverse=True):
-        table_name=k[1]
-        dataset.update_cache(table_name)
-        ds_table = dataset[table_name]
-        table_class = ds_table.model_class
+def insert_for_identifier(identifier, to_write):
+    for key in to_write:
+        if key[0]==identifier:
+            break
+    else:
+        assert False
+    print("INSERTING FOR IDENTIFIER {}".format(identifier))
+    identifier, table_name = key
+    dataset.update_cache(table_name)
+    ds_table = dataset[table_name]
+    table_class = ds_table.model_class
+    for field, value in to_write[key].items():
+        if value.startswith("NEW"):
+            inner_identifier = value.lstrip("NEW")
+            to_write[key][field] = insert_for_identifier(inner_identifier, to_write)
 
-        query = table_class.insert(**to_write[k])
-        query.execute()
-        dataset.update_cache(table_name)
-
-
-    return "OK"
+    query = table_class.insert(**to_write[key])
+    print(query, type(query))
+    inserted_id = query.execute()
+    print("RETURNED", inserted_id)
+    dataset.update_cache(table_name)
+    return inserted_id
 
 
 @app.route('/<table>/recursive_content/', methods=["GET", "POST"])
 @require_table
 def table_content_plus(table):
     if request.method == 'POST':
-        return insert_elements(request)
-
+        insert_elements(request)
 
     page_number = request.args.get('page') or ''
     page_number = int(page_number) if page_number.isdigit() else 1
@@ -632,7 +713,7 @@ def table_content_plus(table):
             if colname not in field_names:
                 print("Invalid filter", colname)
                 continue
-            query = query.where(getattr(ds_table.model_class,colname)==value)
+            query = query.where(getattr(ds_table.model_class, colname) == value)
             header_stri.append("{}=='{}'".format(colname, value))
 
     total_rows = query.count()
@@ -648,7 +729,7 @@ def table_content_plus(table):
     next_page = page_number + 1 if page_number < total_pages else None
 
     foreign_keys = dataset.get_foreign_keys(table)
-    foreignkey_lookup={f.column: f for f in foreign_keys}
+    foreignkey_lookup = {f.column: f for f in foreign_keys}
     for col, foreign_key in foreignkey_lookup.items():
         query.prefetch(dataset[foreign_key.dest_table].model_class)
 
@@ -664,7 +745,6 @@ def table_content_plus(table):
     query = query.paginate(page_number, rows_per_page)
 
     print(query, type(query))
-
 
     columns = [f.column_name for f in ds_table.model_class._meta.sorted_fields]
 
@@ -689,7 +769,7 @@ def table_content_plus(table):
         total_rows=total_rows,
         renderrow=get_renderer(foreignkey_lookup, field_names, [], True, table_name=table, i=0),
         insert_row=get_insert_renderer(foreignkey_lookup, field_names, ds_table.model_class)
-        )
+    )
 
 
 @app.route('/<table>/query/', methods=['GET', 'POST'])
@@ -734,6 +814,7 @@ def table_query(table):
         table=table,
         table_sql=table_sql)
 
+
 @app.route('/table-definition/', methods=['POST'])
 def set_table_definition_preference():
     key = 'show'
@@ -743,6 +824,7 @@ def set_table_definition_preference():
     elif key in session:
         del session[key]
     return jsonify({key: show})
+
 
 def export(table, sql, export_format):
     model_class = dataset[table].model_class
@@ -768,6 +850,7 @@ def export(table, sql, export_format):
     response.headers['Expires'] = 0
     response.headers['Pragma'] = 'public'
     return response
+
 
 @app.route('/<table>/import/', methods=['GET', 'POST'])
 @require_table
@@ -828,6 +911,7 @@ def table_import(table):
         strict=strict,
         table=table)
 
+
 @app.route('/<table>/drop/', methods=['GET', 'POST'])
 @require_table
 def drop_table(table):
@@ -840,6 +924,7 @@ def drop_table(table):
 
     return render_template('drop_table.html', table=table)
 
+
 @app.template_filter('format_index')
 def format_index(index_sql):
     split_regex = re.compile(r'\bon\b', re.I)
@@ -848,6 +933,7 @@ def format_index(index_sql):
 
     create, definition = split_regex.split(index_sql)
     return '\nON '.join((create.strip(), definition.strip()))
+
 
 @app.template_filter('value_filter')
 def value_filter(value, max_length=50):
@@ -864,8 +950,8 @@ def value_filter(value, max_length=50):
             return ('<span class="truncated">%s</span> '
                     '<span class="full" style="display:none;">%s</span>'
                     '<a class="toggle-value" href="#">...</a>') % (
-                        value[:max_length],
-                        value)
+                       value[:max_length],
+                       value)
     return value
 
 
@@ -884,13 +970,14 @@ def value_filter_plus(value, max_length=50):
             return ('<span class="truncated">%s</span> '
                     '<span class="full" style="display:none;">%s</span>'
                     '<a class="toggle-value" href="#">...</a>') % (
-                        value[:max_length],
-                        value)
+                       value[:max_length],
+                       value)
     return value
 
 
 column_re = re.compile('(.+?)\((.+)\)', re.S)
 column_split_re = re.compile(r'(?:[^,(]|\([^)]*\))+')
+
 
 def _format_create_table(sql):
     create_table, column_list = column_re.search(sql).groups()
@@ -901,6 +988,7 @@ def _format_create_table(sql):
         create_table,
         ',\n'.join(columns))
 
+
 @app.template_filter()
 def format_create_table(sql):
     try:
@@ -908,9 +996,11 @@ def format_create_table(sql):
     except:
         return sql
 
+
 @app.template_filter('highlight')
 def highlight_filter(data):
     return Markup(syntax_highlight(data))
+
 
 def get_query_images():
     accum = []
@@ -923,6 +1013,7 @@ def get_query_images():
         accum.append((parts, 'img/' + filename))
     return accum
 
+
 #
 # Flask application helpers.
 #
@@ -934,13 +1025,16 @@ def _general():
         'login_required': bool(app.config.get('PASSWORD')),
     }
 
+
 @app.context_processor
 def _now():
     return {'now': datetime.datetime.now()}
 
+
 @app.before_request
 def _connect_db():
     dataset.connect()
+
 
 @app.teardown_request
 def _close_db(exc):
@@ -962,6 +1056,7 @@ class PrefixMiddleware(object):
         else:
             start_response('404', [('Content-Type', 'text/plain')])
             return ['URL does not match application prefix.'.encode()]
+
 
 #
 # Script options.
@@ -1017,10 +1112,12 @@ def get_option_parser():
 
     return parser
 
+
 def die(msg, exit_code=1):
     sys.stderr.write('%s\n' % msg)
     sys.stderr.flush()
     sys.exit(exit_code)
+
 
 def open_browser_tab(host, port):
     url = 'http://%s:%s/' % (host, port)
@@ -1033,16 +1130,18 @@ def open_browser_tab(host, port):
     thread.daemon = True
     thread.start()
 
+
 def install_auth_handler(password):
     app.config['PASSWORD'] = password
 
     @app.before_request
     def check_password():
         if not session.get('authorized') and request.path != '/login/' and \
-           not request.path.startswith(('/static/', '/favicon')):
+                not request.path.startswith(('/static/', '/favicon')):
             flash('You must log-in to view the database browser.', 'danger')
             session['next_url'] = request.base_url
             return redirect(url_for('login'))
+
 
 def load_customization_plugin(folder):
     import importlib.util
@@ -1081,6 +1180,7 @@ def initialize_app(filename, read_only=False, password=None, url_prefix=None):
 
     migrator = dataset._migrator
     dataset.close()
+
 
 def main():
     # This function exists to act as a console script entry-point.

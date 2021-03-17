@@ -1,17 +1,37 @@
 class Plugin():
-    def format_title(self, title, table_name, row, is_toplevel):
-        title_fields = {
+    title_fields = {
             "employees": ("Employee {} {}", ("FirstName", "LastName")),
             "albums": ("Album {}", ("Title",)),
-            "artists": ("Artist {}", ("Name",))
+            "artists": ("Artist {}", ("Name",)),
+            "playlists": ("Playlist '{}'", ("Name",)),
+            "tracks": ("Track: {}", ("Name",))
+
         }
-        if table_name in title_fields:
-            template_string, row_keys = title_fields[table_name]
-            return template_string.format(*[getattr(row, key) for key in row_keys])
-        elif table_name == title:
-            return "Entity from table {}".format(table_name)
+    def format_title(self, title, table_name, row, is_toplevel):
+        if table_name in self.title_fields:
+            template_string, row_keys = self.title_fields[table_name]
+            return template_string.format(*[
+                recursive_getattr(row, key) for key in row_keys])
         else:
-            return "{}: entity from table {}".format(title, table_name)
+            return title
+
+    def format_entry(self, title, table_name, row_dict):
+        if table_name in self.title_fields:
+            template_string, row_keys = self.title_fields[table_name]
+            return template_string.format(*[
+                recursive_getattr(row_dict, key) for key in row_keys])
+        else:
+            return title
 
     def add_content(self, table_name, row, is_toplevel):
-        return '<b><font color="red">Your add could be here!!!</font></b>'
+        return ""#'<b><font color="red">Your add could be here!!!</font></b>'
+
+def recursive_getattr(row, key):
+    keys = key.split(".")
+    curr_row = row
+    for key in keys:
+        try:
+            curr_row = getattr(curr_row, key)
+        except AttributeError:
+            curr_row = curr_row[key]
+    return curr_row
